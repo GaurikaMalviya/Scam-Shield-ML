@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101010">
+  <title>ScamShield · Fraud detection workbench</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="shell top-inner">
+      <a class="brand" href="#" aria-label="ScamShield home"><span class="brand-icon" aria-hidden="true">◈</span> ScamShield<span class="brand-dot">.</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#overview" aria-current="page">Overview</a>
+        <a href="#models">Models</a>
+        <a href="#method">Method</a>
+      </nav>
+      <a class="button outline header-action" href="#assess">Assess transaction <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+  <main class="shell" id="overview">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="marker" aria-hidden="true">⊕</span> CARD TRANSACTION INTELLIGENCE</div>
+        <h1 id="hero-title">Fraud detection,<br><span>in focus.</span></h1>
+        <p>Compare three machine learning models, score a card transaction, and see which signals move the decision.</p>
+        <div class="actions">
+          <a class="button primary" href="#assess">Assess a transaction <span aria-hidden="true">↗</span></a>
+          <a class="text-link" href="#models">Explore benchmarks <span aria-hidden="true">↓</span></a>
+        </div>
+      </div>
+      <figure class="hero-art" aria-hidden="true">
+        <span class="corner nw"></span><span class="corner ne"></span><span class="corner sw"></span><span class="corner se"></span>
+        <div class="art-top mono"><span>FIG A · SIGNAL FIELD</span><span>×</span></div>
+        <canvas id="signal"></canvas>
+        <div class="art-bottom mono"><span>ULB / WORLDLINE</span><span>30 MODEL INPUTS</span></div>
+      </figure>
+    </section>
+
+    {% set default = report.models[report.recommended] %}
+    <section class="snapshot" aria-label="Evaluation snapshot">
+      <div class="snapshot-title mono"><span><i></i> HELD-OUT BENCHMARK</span><span>{{ default.name | upper }} · VALIDATION-SELECTED</span></div>
+      <div class="snapshot-grid">
+        <div><div class="stat-name">Transactions</div><div class="stat-value">{{ "{:,}".format(report.audit.raw_rows) }}</div><span>Records in source dataset</span></div>
+        <div><div class="stat-name">Fraud prevalence</div><div class="stat-value">{{ "%.3f"|format(100 * report.audit.raw_fraud / report.audit.raw_rows) }}<small>%</small></div><span>Positive labels in source data</span></div>
+        <div><div class="stat-name">Average precision</div><div class="stat-value">{{ "%.3f"|format(default.ap) }}</div><span>Precision–recall ranking metric</span></div>
+        <div><div class="stat-name">Fraud recall</div><div class="stat-value">{{ "%.1f"|format(100 * default.recall) }}<small>%</small></div><span>Fraud caught at validation cutoff</span></div>
+      </div>
+    </section>
+
+    <section id="models" class="section" aria-labelledby="models-title">
+      <div class="section-head">
+        <div><div class="eyebrow"><span class="marker" aria-hidden="true">⊞</span> MODEL BENCHMARK</div><h2 id="models-title">Compare the models.</h2></div>
+        <p>All three classifiers scored the same {{ "{:,}".format(report.partitions.test.rows) }} future transactions. Every alert cutoff was chosen on validation data.</p>
+      </div>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable model results">
+        <table>
+          <thead><tr><th scope="col">Model</th><th scope="col">AP</th><th scope="col">Accuracy</th><th scope="col">Precision</th><th scope="col">Recall</th><th scope="col">F1</th><th scope="col">Cutoff</th></tr></thead>
+          <tbody>
+          {% for id, m in report.models.items() %}
+            <tr><th scope="row">{{ m.name }} {% if id == report.recommended %}<span class="tag">Default</span>{% endif %}</th>
+              {% for key in ['ap', 'accuracy', 'precision', 'recall', 'f1', 'threshold'] %}<td>{{ "%.3f"|format(m[key]) }}</td>{% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="bench-grid">
+        <article class="panel curve-panel">
+          <h3>Precision–recall curve</h3>
+          <canvas id="pr-chart" role="img" aria-label="Test precision against recall for all three models. Exact average precision appears in the model table."></canvas>
+          <div class="chart-legend mono" id="legend"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h3>Confusion matrix</h3><label class="sr" for="matrix-model">Matrix model</label><select id="matrix-model">
+            {% for id, m in report.models.items() %}<option value="{{ id }}" {% if id == report.recommended %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
+          </select></div>
+          <div id="matrix" class="matrix-grid" aria-live="polite"></div>
+          <details class="importance"><summary>View top model inputs</summary><p id="importance-method"></p><ol id="importance"></ol></details>
+        </article>
+      </div>
+    </section>
+
+    <section id="assess" class="section" aria-labelledby="assess-title">
+      <div class="section-head">
+        <div><div class="eyebrow"><span class="marker" aria-hidden="true">⊕</span> TRANSACTION WORKBENCH</div><h2 id="assess-title">Assess a transaction.</h2></div>
+        <p>Start with a held-out example, then edit the amount, elapsed time, or anonymized components to see how the model responds.</p>
+      </div>
+      <div class="bench-grid assess-grid">
+        <form id="score-form" class="panel">
+          <h3>Transaction inputs</h3>
+          <div class="form-fields">
+            <label>Classifier<select id="score-model">
+              {% for id, m in report.models.items() %}<option value="{{ id }}" {% if id == report.recommended %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
+            </select></label>
+            <label>Load example<select id="example">
+              {% for case in report.examples %}<option value="{{ loop.index0 }}">{{ case.label }}</option>{% endfor %}
+              <option value="custom">Custom values</option>
+            </select></label>
+            <label>Amount<input id="field-Amount" required type="number" step="any" min="0"></label>
+            <label>Time (seconds)<input id="field-Time" required type="number" step="any" min="0"></label>
+          </div>
+          <details class="feature-details"><summary>Anonymous PCA components (V1–V28)</summary>
+            <div class="feature-fields">
+            {% for name in features[1:-1] %}<label>{{ name }}<input id="field-{{ name }}" required type="number" step="any"></label>{% endfor %}
+            </div>
+          </details>
+          <button class="button primary" type="submit">Run assessment <span aria-hidden="true">↗</span></button>
+          <p id="error" role="alert"></p>
+        </form>
+        <article class="panel assessment" aria-labelledby="result-title">
+          <h3 id="result-title">Assessment result</h3>
+          <div id="result" aria-live="polite"><p>Run an assessment to see the score and its contributing inputs.</p></div>
+        </article>
+      </div>
+    </section>
+    <section id="method" class="section method" aria-labelledby="method-title">
+      <div class="section-head"><div><div class="eyebrow"><span class="marker" aria-hidden="true">⊡</span> METHODOLOGY</div><h2 id="method-title">From data to decision.</h2></div></div>
+      <div class="method-grid">
+        <article><h3>01 / Partition by time</h3><p>We remove exact repeats and split chronologically into training, validation, and test sets. Transaction time orders the data and is also a model input.</p></article>
+        <article><h3>02 / Choose the alert cutoff</h3><p>Training weights counter class imbalance. Validation F1 selects a cutoff for each classifier, then the test set measures performance on later transactions.</p></article>
+        <article><h3>03 / Inspect each prediction</h3><p>Tree-path contributions explain CART and Random Forest scores. TreeSHAP explains XGBoost in log-odds. PCA components carry anonymous signals with undisclosed business meanings.</p></article>
+      </div>
+    </section>
+  </main>
+  <footer><div class="shell footer-inner"><span>ScamShield <span class="muted">· Educational benchmark</span></span><a class="mono" href="https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud">DATASET SOURCE ↗</a></div></footer>
+  <script id="report" type="application/json">{{ report | tojson }}</script>
+  <script id="features" type="application/json">{{ features | tojson }}</script>
+</body>
+</html>
